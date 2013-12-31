@@ -1478,12 +1478,13 @@ Rickshaw.Graph.Axis.X = function(args) {
 
 		this.graph = args.graph;
 		this.orientation = args.orientation || 'top';
-
+		
 		this.pixelsPerTick = args.pixelsPerTick || 75;
 		if (args.ticks) this.staticTicks = args.ticks;
 		if (args.tickValues) this.tickValues = args.tickValues;
 
 		this.tickSize = args.tickSize || 4;
+		this.tickTransformation = args.tickTransformation || function(svg) {};
 		this.ticksTreatment = args.ticksTreatment || 'plain';
 
 		if (args.element) {
@@ -1548,11 +1549,13 @@ Rickshaw.Graph.Axis.X = function(args) {
 			this.vis.selectAll('*').remove();
 		}
 
-		this.vis
+
+		this.tickTransformation(this.vis
 			.append("svg:g")
 			.attr("class", ["x_ticks_d3", this.ticksTreatment].join(" "))
 			.attr("transform", transform)
-			.call(axis.ticks(this.ticks).tickSubdivide(0).tickSize(this.tickSize));
+			.call(axis.ticks(this.ticks).tickSubdivide(0).tickSize(this.tickSize))
+			.selectAll("text") );
 
 		var gridSize = (this.orientation == 'bottom' ? 1 : -1) * this.graph.height;
 
@@ -1602,6 +1605,7 @@ Rickshaw.Graph.Axis.Y = Rickshaw.Class.create( {
 		this.ticksTreatment = args.ticksTreatment || 'plain';
 
 		this.tickFormat = args.tickFormat || function(y) { return y };
+		this.tickTransformation = args.tickTransformation || function(svg) {};
 
 		this.berthRate = 0.10;
 
@@ -1682,11 +1686,12 @@ Rickshaw.Graph.Axis.Y = Rickshaw.Class.create( {
 			this.vis.selectAll('*').remove();
 		}
 
-		this.vis
+		this.tickTransformation(this.vis
 			.append("svg:g")
 			.attr("class", ["y_ticks", this.ticksTreatment].join(" "))
 			.attr("transform", transform)
-			.call(axis.ticks(this.ticks).tickSubdivide(0).tickSize(this.tickSize));
+			.call(axis.ticks(this.ticks).tickSubdivide(0).tickSize(this.tickSize))
+			.selectAll("text"));
 
 		return axis;
 	},
@@ -2397,6 +2402,8 @@ Rickshaw.Graph.RangeSlider = Rickshaw.Class.create({
 		var element = this.element = args.element;
 		var graph = this.graph = args.graph;
 
+		this.slideCallbacks = [];
+
 		this.build();
 
 		graph.onUpdate( function() { this.update() }.bind(this) );
@@ -2408,6 +2415,7 @@ Rickshaw.Graph.RangeSlider = Rickshaw.Class.create({
 		var graph = this.graph;
 
 		var domain = graph.dataDomain();
+		var self = this;
 
 		$( function() {
 			$(element).slider( {
@@ -2432,9 +2440,14 @@ Rickshaw.Graph.RangeSlider = Rickshaw.Class.create({
 					if (domain[0] == ui.values[0]) {
 						graph.window.xMin = undefined;
 					}
+
 					if (domain[1] == ui.values[1]) {
 						graph.window.xMax = undefined;
 					}
+
+					self.slideCallbacks.forEach(function(callback) {
+						callback(graph, graph.window.xMin, graph.window.xMax);
+					});
 				}
 			} );
 		} );
@@ -2463,6 +2476,10 @@ Rickshaw.Graph.RangeSlider = Rickshaw.Class.create({
 		}
 
 		$(element).slider('option', 'values', values);
+	},
+
+	onSlide: function(callback) {
+		this.slideCallbacks.push(callback);
 	}
 });
 
@@ -2492,6 +2509,8 @@ Rickshaw.Graph.RangeSlider.Preview = Rickshaw.Class.create({
 		this.defaults.gripperColor = d3.rgb(this.defaults.frameColor).darker().toString(); 
 
 		this.configureCallbacks = [];
+		this.slideCallbacks = [];
+
 		this.previews = [];
 
 		args.width = args.width || this.graphs[0].width || this.defaults.width;
@@ -2499,6 +2518,10 @@ Rickshaw.Graph.RangeSlider.Preview = Rickshaw.Class.create({
 
 		this.configure(args);
 		this.render();
+	},
+
+	onSlide: function(callback) {
+		this.slideCallbacks.push(callback);
 	},
 
 	onConfigure: function(callback) {
@@ -2551,12 +2574,14 @@ Rickshaw.Graph.RangeSlider.Preview = Rickshaw.Class.create({
 
 			var graphArgs = Rickshaw.extend({}, parent.config);
 			var height = self.previewHeight / self.graphs.length;
+			var renderer = parent.renderer.name;
 
 			Rickshaw.extend(graphArgs, {
 				element: this.appendChild(document.createElement("div")),
 				height: height,
 				width: self.previewWidth,
-				series: parent.series
+				series: parent.series,
+				renderer: renderer
 			});
 
 			var graph = new Rickshaw.Graph(graphArgs);
@@ -2823,6 +2848,10 @@ Rickshaw.Graph.RangeSlider.Preview = Rickshaw.Class.create({
 					domainScale(frameAfterDrag[1])
 				];
 
+				self.slideCallbacks.forEach(function(callback) {
+					callback(graph, windowAfterDrag[0], windowAfterDrag[1]);
+				});
+
 				if (frameAfterDrag[0] === 0) {
 					windowAfterDrag[0] = undefined;
 				}
@@ -2831,7 +2860,7 @@ Rickshaw.Graph.RangeSlider.Preview = Rickshaw.Class.create({
 				}
 				graph.window.xMin = windowAfterDrag[0];
 				graph.window.xMax = windowAfterDrag[1];
-				
+
 				graph.update();
 			});
 		}
